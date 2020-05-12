@@ -20,5 +20,18 @@ swift run
 ```
 
 ## Adding the SwiftySR700 package to your project
+Edit your `Package.swift` file to add the SwiftySR700 module as a dependency:
+```
+    dependencies: [
+        // Dependencies declare other packages that this package depends on.
+        .package(url: "http://github.com/balnaves/SwiftySR700.git", from: "0.1.0")
+    ],
+```
+Add `SwiftySR700` to your main target:
+```
+    .target(
+        name: "MyFirstProject",
+        dependencies: ["SwiftySR700"]),
+```
 
 ## Using the SwiftySR700 package in your project
