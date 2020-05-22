@@ -68,5 +68,9 @@ controller.start()
 dispatchMain() // Keep our executable running until we exit()
 ```
 ## History/Origin
-Depending on how far it evolves, this project could be considered a port of, or at least heavily inspired by, the python library FreshRoastSR700 at https://github.com/Roastero/freshroastsr700.
+Depending on how far it evolves, this project could be considered a port of, or at least heavily inspired by, the python library [FreshRoastSR700](https://github.com/Roastero/freshroastsr700).
 For a number of reasons, I wanted to try a version in swift and Roastero's library was a source of information and inspiration. All of the protocol investigation and documentation was done there and used here as a reference.
+
+## Acknowledgements
+* This library is based heavily on the work of [FreshRoastSR700](https://github.com/Roastero/freshroastsr700).
+* I use the most excellent [SwiftSerial](https://github.com/yeokm1/SwiftSerial) library to handle the serial communications.
