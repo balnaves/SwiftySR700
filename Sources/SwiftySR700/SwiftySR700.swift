@@ -9,7 +9,7 @@ enum DecodingState {
     case lookingForFooter2
 }
 
-enum ConnectionState {
+public enum ConnectionState {
     case notConnected
     case attemptingConnect
     case connecting
@@ -17,25 +17,27 @@ enum ConnectionState {
     case ready
 }
 
-enum ConnectionType {
+public enum ConnectionType {
     case none
     case auto
     case singleShot
 }
 
-enum State {
+public enum State {
     case idle
     case roast
     case cool
     case sleep
 }
 
-enum HeatSetting: UInt8 {
+public enum HeatSetting: UInt8 {
     case none = 0, low, medium, high
 }
 
-protocol RoasterDelegate: class {
-    func roasterChanged(temperature: Int)
+public protocol RoasterDelegate: class {
+    func roasterChanged(temperature: Int, timeRemaining: Int)
+    func stepCompleted(state: State)
+    func connected(state: ConnectionState)
     func disconnected()
 }
 
@@ -47,9 +49,9 @@ let logger = Logger(label: "sr700")
  https://github.com/Roastero/freshroastsr700/blob/master/docs/communication_protocol.rst
  */
 
-class SwiftySR700 {
+public class SwiftySR700 {
     
-    var serialPort: SerialPort?
+    fileprivate var serialPort: SerialPort?
     
     /* if set to True, turns on thermostat mode.  In thermostat
     mode, freshroastsr700 takes control of heat_setting and does
@@ -65,13 +67,13 @@ class SwiftySR700 {
     ext_sw_heater_drive cannot be allowed to both be True, this arg
     is given precedence over the softwareThermostat arg.
      */
-    var extHeaterDrive = false
+    public var extHeaterDrive = false
     
-    var heaterSegments = 8
+    public var heaterSegments = 8
     
-    var kp = 0.06
-    var ki = 0.0075
-    var kd = 0.01
+    public var kp = 0.06
+    public var ki = 0.0075
+    public var kd = 0.01
     
     fileprivate let tempUnit:[UInt8] = [0x61, 0x74]
     fileprivate let flags:[UInt8] = [0x63]
@@ -114,10 +116,9 @@ class SwiftySR700 {
     fileprivate var responsePacket = [UInt8]()
     
     fileprivate var connectCompletionHandler: ((ConnectionState) -> Void)?
-    fileprivate var roastCompletionHandler: (() -> Void)?
-    fileprivate var coolCompletionHandler: (() -> Void)?
+    fileprivate var completionHandler: (() -> Void)?
     
-    weak var delegate: RoasterDelegate?
+    public weak var delegate: RoasterDelegate?
 
     fileprivate(set) var state = State.idle {
         didSet {
@@ -139,84 +140,87 @@ class SwiftySR700 {
         }
     }
     
-    fileprivate let messageQueue = DispatchQueue(label: "sr700.messageQueue")
+    fileprivate let serialCommunicationsQueue = DispatchQueue(label: "sr700.serialCommunicationsQueue")
 
-    fileprivate let timer = RepeatingTimer(timeInterval: 1)
+    fileprivate let timer = DispatchSource.makeTimerSource()
     
-    init() {
+    public init() {
         if extHeaterDrive {
             softwareThermostat = false
         }
-        messageQueue.async {
-            self.commEntry()
+        serialCommunicationsQueue.async {
+            self.serialCommunicationsQueueEntry()
         }
-        timer.eventHandler = timerFired
+        timer.setEventHandler {
+            self.timerFired()
+        }
+        timer.schedule(deadline : .now(), repeating: .seconds(1), leeway: .milliseconds(1))
     }
     
-    func connect(completion: @escaping (ConnectionState) -> Void) {
+    public func connect(completion: ((ConnectionState) -> Void)? = nil) {
         connectCompletionHandler = completion
         
         if startConnect(type: .singleShot) == false {
             // We're not in the right state to connect, should we throw an Error here?
             connectCompletionHandler?(.notConnected)
+            delegate?.connected(state: .notConnected)
         }
     }
     
-    func autoConnect() -> Bool {
+    public func autoConnect() -> Bool {
         return startConnect(type: .auto)
     }
     
-    func roast(level: HeatSetting, fan: UInt8, seconds:Int, completion: @escaping () -> Void) {
+    public func roast(level: HeatSetting, fan: Int, seconds:Int, completion: (() -> Void)? = nil) {
         state = .roast
         heatSetting = level
         softwareThermostat = false
-        fanSpeed = fan
+        fanSpeed = UInt8(fan)
         timeRemaining = seconds
-        roastCompletionHandler = completion
-        coolCompletionHandler = nil
+        completionHandler = completion
+        timer.resume()
     }
     
-    func roast(temperature: Int, fan: UInt8, seconds:Int, completion: @escaping () -> Void) {
+    public func roast(temperature: Int, fan: Int, seconds:Int, completion: (() -> Void)? = nil) {
         state = .roast
         targetTemp = temperature
         softwareThermostat = true
-        fanSpeed = fan
+        fanSpeed = UInt8(fan)
         timeRemaining = seconds
-        roastCompletionHandler = completion
-        coolCompletionHandler = nil
+        completionHandler = completion
+        timer.resume()
     }
     
-    func cool(fan: UInt8, seconds:Int, completion: @escaping () -> Void) {
+    public func cool(fan: Int, seconds:Int, completion: (() -> Void)? = nil) {
         state = .cool
-        fanSpeed = fan
+        fanSpeed = UInt8(fan)
         timeRemaining = seconds
-        coolCompletionHandler = completion
-        roastCompletionHandler = nil
+        completionHandler = completion
+        timer.resume()
     }
     
-    func idle() {
+    public func idle() {
         state = .idle
         heatSetting = .none
         fanSpeed = 0
-        coolCompletionHandler = nil
-        roastCompletionHandler = nil
+        completionHandler = nil
     }
     
-    func sleep() {
+    public func sleep() {
         state = .sleep
     }
     
     /// Closes the serial port but does not exit the communications thread, so we are
     /// able to reconnect again if we want to.
-    func disconnect() {
-        doDisconnect = true // Signals commEntry()
+    public func disconnect() {
+        doDisconnect = true // Signals serialCommunicationsQueueEntry()
         timer.suspend()
         state = .sleep
     }
     
     /// Closes the serial port and exits the communications thread. If you want to
     /// connect again you'll need to create another roaster
-    func terminate() {
+    public func terminate() {
         disconnect()
         tearDown = true
     }
@@ -249,7 +253,7 @@ class SwiftySR700 {
         }
         catch PortError.failedToOpen {
             logger.error("Serial port failed to open. You might need root permissions.")
-            throw RoasterError.lookupError("Serial port failed to open. You might need root permissions.")
+            throw RoasterError.lookupError("Serial port failed to open. Check device is on, or you might need root permissions.")
         }
         catch {
             logger.error("Error: \(error)")
@@ -273,7 +277,7 @@ class SwiftySR700 {
             unsafeBytes.initialize(from: packet, count: packet.count)
             do {
                 let bytesWritten = try serialPort?.writeBytes(from: unsafeBytes, size: packet.count)
-                logger.info("Wrote \(bytesWritten ?? 0) packet bytes: \(packet.hexEncodedString())")
+                logger.trace("Wrote \(bytesWritten ?? 0) packet bytes: \(packet.hexEncodedString())")
                 success = true
             }
             catch {
@@ -304,7 +308,7 @@ class SwiftySR700 {
         return bytes
     }
     
-    fileprivate func commEntry() {
+    fileprivate func serialCommunicationsQueueEntry() {
         
         logger.info("*** Started communications task ***")
         
@@ -328,7 +332,6 @@ class SwiftySR700 {
             if attemptingConnect == .auto {
                 if autoConnect() {
                     connected = true
-                    //connectState = .connected
                 }
                 else {
                     connected = false
@@ -342,12 +345,12 @@ class SwiftySR700 {
                 do {
                     try internalConnect()
                     connected = true
-                    //connectState = .connected
                 }
                 catch {
                     connected = false
                     connectState = .notConnected
                     connectCompletionHandler?(.notConnected)
+                    delegate?.connected(state: .notConnected)
                 }
                 if connectState != .readingCurrentRecipe {
                     attemptingConnect = .none
@@ -358,7 +361,6 @@ class SwiftySR700 {
                 attemptingConnect = .none
             }
             
-            logger.info("Starting loop")
             attemptingConnect = .none
             
             // Create a PID controller and heat controller here so
@@ -375,10 +377,8 @@ class SwiftySR700 {
             
             while !doDisconnect {
                 loopStartTime = Date()
-                //logger.info("Top of loop")
-
-                // Write to device
                 
+                // Write to device
                 if writeToDevice() == false {
                     writeErrors += 1
                     if writeErrors > 3 {
@@ -426,7 +426,7 @@ class SwiftySR700 {
                 
                 // Update the PID controlled software thermostat, or external thermostat (not implemented)
                 if connectState == .ready && softwareThermostat {
-                    logger.info("Updating thermostat")
+                    logger.trace("Updating thermostat")
                     if state == .roast {
                         // Update the PID controller once every time through
                         // the heater segment count
@@ -475,18 +475,14 @@ class SwiftySR700 {
             totalTime += 1
             if timeRemaining > 0 {
                 timeRemaining -= 1
-                logger.info("*** Time remaining = \(timeRemaining), totalTime = \(totalTime) ***")
+                logger.trace("*** Time remaining = \(timeRemaining), totalTime = \(totalTime) ***")
             }
             else {
                 // Time remaining has expired
-                logger.info("*** Time remaining expired, setting to idle state, totalTime = \(totalTime) ***")
-                if state == .roast {
-                    roastCompletionHandler?()
-                }
-                else if state == .cool {
-                    coolCompletionHandler?()
-                }
-                idle()
+                logger.trace("*** Time remaining expired, totalTime = \(totalTime) ***")
+                timer.suspend()
+                completionHandler?()
+                delegate?.stepCompleted(state: state)
             }
         }
     }
@@ -543,9 +539,10 @@ class SwiftySR700 {
         header = [0xAA, 0xAA]
         // Reset to idle state
         currentState = [0x02, 0x01]
-        // Call our connect completion handler if we have one
+        
+        // Call our connect completion handler and delegate if we have them
         connectCompletionHandler?(.ready)
-        timer.resume()
+        delegate?.connected(state: .ready)
     }
     
     fileprivate func processResponseBody(_ bytes: [UInt8]) -> Bool {
@@ -553,7 +550,7 @@ class SwiftySR700 {
             logger.error("Invalid packet length: \(bytes)")
             return false
         }
-        logger.info("Processing response bytes, bytes = \(bytes.hexEncodedString())")
+        logger.trace("Processing response bytes, bytes = \(bytes.hexEncodedString())")
         
         // Check to see if we've read the initial recipes
         if connectState == .readingCurrentRecipe {
@@ -566,8 +563,7 @@ class SwiftySR700 {
 
         let temp = bytes[8...9].withUnsafeBytes { $0.load(as: UInt16.self).bigEndian }
         
-        //logger.info("Processing roaster bytes, temp bytes = \(bytes[8...9].hexEncodedString())")
-        logger.info("Processing roaster bytes, temp = \(temp)")
+        logger.trace("Processing roaster bytes, temp = \(temp)")
         
         if temp == 0xFF00 {
             currentTemp = 150
@@ -581,7 +577,7 @@ class SwiftySR700 {
         }
         
         // Let our delegate know something changed
-        delegate?.roasterChanged(temperature: currentTemp)
+        delegate?.roasterChanged(temperature: currentTemp, timeRemaining: timeRemaining)
         
         return true
     }
