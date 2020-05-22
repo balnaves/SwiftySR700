@@ -2,9 +2,16 @@ import XCTest
 @testable import SwiftySR700
 
 final class SwiftySR700Tests: XCTestCase, RoasterDelegate {
+    func roasterChanged(temperature: Int, timeRemaining: Int) {
+       print("roasterChanged, temperature = \(temperature), timeRemaining = \(timeRemaining)")
+    }
     
-    func roasterChanged(temperature: Int) {
-        print("roasterChanged, temperature = \(temperature)")
+    func stepCompleted(state: State) {
+        print("stepCompleted, state = \(state)")
+    }
+    
+    func connected(state: ConnectionState) {
+        print("roaster connected")
     }
     
     func disconnected() {
