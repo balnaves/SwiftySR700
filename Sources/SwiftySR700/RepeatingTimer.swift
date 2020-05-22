@@ -2,7 +2,6 @@
 //  RepeatingTimer.swift
 //  https://medium.com/over-engineering/a-background-repeating-timer-in-swift-412cecfd2ef9
 //
-//  Created by James Balnaves on 5/12/20.
 //
 
 import Foundation

@@ -99,7 +99,8 @@ public class SwiftySR700 {
     fileprivate var targetTemp = 150
     fileprivate var currentTemp = 150
     
-    fileprivate(set) var timeRemaining:Int = 0
+    public var timeRemaining:Int = 0
+    
     fileprivate(set) var totalTime = 0
     
     fileprivate var doDisconnect = false
@@ -142,7 +143,7 @@ public class SwiftySR700 {
     
     fileprivate let serialCommunicationsQueue = DispatchQueue(label: "sr700.serialCommunicationsQueue")
 
-    fileprivate let timer = DispatchSource.makeTimerSource()
+    fileprivate let timer = RepeatingTimer(timeInterval: 1)
     
     public init() {
         if extHeaterDrive {
@@ -151,10 +152,9 @@ public class SwiftySR700 {
         serialCommunicationsQueue.async {
             self.serialCommunicationsQueueEntry()
         }
-        timer.setEventHandler {
+        timer.eventHandler = {
             self.timerFired()
         }
-        timer.schedule(deadline : .now(), repeating: .seconds(1), leeway: .milliseconds(1))
     }
     
     public func connect(completion: ((ConnectionState) -> Void)? = nil) {
