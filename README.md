@@ -35,7 +35,7 @@ Add `SwiftySR700` to your main target:
 ```
 
 ## Using the SwiftySR700 library in your project
-The SR700 object can be used with closures, delegate callbacks or a combination of both.
+A SwiftySR700 object can be used with closures, delegate callbacks or a combination of both.
 For examples, see the example projects, there's one showing each type of usage.
 In the simplest case, your `main.swift` might look something like this
 ```swift
