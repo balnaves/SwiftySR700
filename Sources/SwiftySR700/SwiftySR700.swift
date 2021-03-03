@@ -51,6 +51,7 @@ let logger = Logger(label: "sr700")
 
 public class SwiftySR700 {
     
+    public let serialPath: String
     fileprivate var serialPort: SerialPort?
     
     /* if set to True, turns on thermostat mode.  In thermostat
@@ -83,6 +84,7 @@ public class SwiftySR700 {
     fileprivate var currentState:[UInt8] = [0x02, 0x01]
 
     fileprivate var fanSpeed: UInt8 = 0 // Valid values are 01, 02, 03, 04, 05, 06, 07, 08, 09 (00 during init)
+    
     
     /*
      Heat Setting (1 byte) - This field is the heat setting for the roaster. This value will not cause the roaster to start roasting.
@@ -145,7 +147,8 @@ public class SwiftySR700 {
 
     fileprivate let timer = RepeatingTimer(timeInterval: 1)
     
-    public init() {
+    public init(serialPath: String = "/dev/ttyUSB0") {
+        self.serialPath = serialPath
         if extHeaterDrive {
             softwareThermostat = false
         }
@@ -237,7 +240,7 @@ public class SwiftySR700 {
     
     fileprivate func internalConnect() throws {
         connectState = .connecting
-        serialPort = SerialPort(path: "/dev/ttyUSB0")
+        serialPort = SerialPort(path: self.serialPath)
         
         do {
             logger.info("Attempting to open port")
