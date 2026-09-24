@@ -1,0 +1,105 @@
+[General]
+Delay=1000
+Mode=F
+roastertype_setup=Fresh Roast SR700
+roastersize_setup=0.12
+roasterheating_setup=3
+
+[Units]
+weight=g
+
+[Device]
+id=111
+
+[DefaultButtons]
+buttonactions=21, 0, 0, 0, 0, 0, 21, 21
+buttonactionstrings="send({\"command\":\"roast\"})", , , , , , "send({\"command\":\"cool\"})", "send({\"command\":\"idle\"})"
+buttonvisibility=true, true, true, true, true, false, true, true
+extrabuttonactions=5, 0, 0
+extrabuttonactionstrings="slider(0,5);slider(1,0);slider(2,150);slider(3,0)", , 
+xextrabuttonactions=0, 21
+xextrabuttonactionstrings=, "send({\"command\":\"roast\"})"
+
+[ExtraComm]
+extrabaudrate=9600, 9600
+extrabytesize=8, 8
+extracomport=COM1, COM1
+extraparity=N, N
+extrastopbits=1, 1
+extratimeout=1, 1
+
+[ExtraDev]
+extraCurveVisibility1=true, true, false, false, false, false, false, false, false, false
+extraCurveVisibility2=true, true, false, false, false, false, false, false, false, false
+extraDelta1=true, false, false, false, false, false, false, false, false, false
+extraDelta2=true, false, false, false, false, false, false, false, false, false
+extraFill1=0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+extraFill2=0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+extraLCDvisibility1=true, true, false, false, false, false, false, false, false, false
+extraLCDvisibility2=true, true, false, false, false, false, false, false, false, false
+extradevicecolor1=#43a7cf, #dd8627
+extradevicecolor2=#ad0427, #800080
+extradevices=112, 113
+extramathexpression1=,
+extramathexpression2=,
+extraname1=Fan, Heater %
+extraname2=Heat, Target
+
+[RoC]
+DeltaET=false
+DeltaBT=false
+DeltaETlcd=false
+DeltaBTlcd=false
+ETcurve=false
+ETlcd=false
+BTcurve=true
+BTlcd=true
+
+[events]
+default_etypes_set=0, 0, 0, 0, 0
+etypes=Fan, Heat, Target, Heater, --
+
+[Sliders]
+ModeTempSliders=F
+eventsliderBernoulli=0, 0, 0, 0
+eventslidercoarse=0, 0, 0, 0
+eventslidersflags=0, 1, 1
+eventslidertemp=0, 0, 1, 0
+eventsliderunits=, , , %
+slideractions=18, 18, 18, 18
+slidercommands="send({{\"command\":\"setFan\",\"params\":{{\"value\":{}}}}})", "send({{\"command\":\"setHeat\",\"params\":{{\"value\":{}}}}})", "send({{\"command\":\"setTarget\",\"params\":{{\"value\":{}}}}})", "send({{\"command\":\"setHeaterLevel\",\"params\":{{\"value\":{}}}}})"
+sliderfactors=1, 1, 1, 1
+slidermax=9, 3, 500, 100
+slidermin=1, 0, 150, 0
+slideroffsets=0, 0, 0, 0
+slidervisibilities=1, 1, 1, 1
+
+[WebSocket]
+compression=false
+DRY_node=colorChangeEvent
+FCe_node=firstCrackEndEvent
+FCs_node=firstCrackBeginningEvent
+OFFonDROP=false
+SCe_node=secondCrackEndEvent
+SCs_node=secondCrackBeginningEvent
+STARTonCHARGE=false
+addEvent_message=addEvent
+channel_modes=2, 2, 0, 0, 0, 2, 0, 0, 0, 0
+channel_nodes=temp, temp, fan, heat, heaterLevel, target, , , ,
+channel_requests=, , , , , , , , ,
+charge_message=startRoasting
+command_node=command
+connect_timeout=4
+data_node=data
+drop_message=endRoasting
+event_node=event
+host=127.0.0.1
+id_node=id
+machineID=0
+machine_node=roasterID
+path=WebSocket
+port=8080
+pushMessage_node=pushMessage
+reconnect_interval=2
+request_data_command=getData
+request_timeout=0.5

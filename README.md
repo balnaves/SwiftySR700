@@ -74,3 +74,6 @@ For a number of reasons, I wanted to try a version in swift and Roastero's libra
 ## Acknowledgements
 * This library is based heavily on the work of [FreshRoastSR700](https://github.com/Roastero/freshroastsr700).
 * I use the most excellent [SwiftSerial](https://github.com/yeokm1/SwiftSerial) library to handle the serial communications.
+
+## Using the SR700 with Artisan
+The `Bridge` folder contains `SR700ArtisanBridge`, which connects the roaster to [Artisan](https://artisan-scope.org) over Artisan's WebSocket device, together with a matching Artisan settings file. See [Bridge/README.md](Bridge/README.md).
