@@ -47,6 +47,46 @@ final class SwiftySR700Tests: XCTestCase, RoasterDelegate {
         XCTAssertEqual(roaster.generatePacket(), [0xAA,0xAA,0x61,0x74,0x63,0x02,0x01,0x00,0x00,0x00,0x00,0x00,0xAA,0xFA])
     }
     
+    func testLiveControlSetters() {
+        let roaster = SwiftySR700()
+
+        roaster.setFan(12)
+        XCTAssertEqual(roaster.fan, 9)
+        roaster.setFan(0)
+        XCTAssertEqual(roaster.fan, 1)
+
+        roaster.setTargetTemperature(420)
+        XCTAssertEqual(roaster.targetTemperature, 420)
+        XCTAssertTrue(roaster.isThermostatMode)
+        XCTAssertFalse(roaster.isExternalHeaterDrive)
+
+        roaster.setHeaterLevel(20)
+        XCTAssertEqual(roaster.heaterLevelSetting, roaster.heaterSegments)
+        XCTAssertTrue(roaster.isThermostatMode)
+        XCTAssertTrue(roaster.isExternalHeaterDrive)
+
+        roaster.setHeat(.medium)
+        XCTAssertEqual(roaster.heat, .medium)
+        XCTAssertFalse(roaster.isThermostatMode)
+        XCTAssertFalse(roaster.isExternalHeaterDrive)
+
+        roaster.setTimeRemaining(-5)
+        XCTAssertEqual(roaster.timeRemaining, 0)
+    }
+
+    func testLiveControlChangesPacket() {
+        let roaster = SwiftySR700()
+        roaster.roast(level: .low, fan: 3, seconds: 60)
+        roaster.setFan(7)
+        roaster.setHeat(.high)
+        let packet = roaster.generatePacket()
+        XCTAssertEqual(Array(packet[5...6]), [0x04, 0x02]) // roast state
+        XCTAssertEqual(packet[7], 7)    // fan
+        XCTAssertEqual(packet[9], 3)    // heat
+        XCTAssertEqual(roaster.state, .roast)
+        roaster.terminate()
+    }
+
     func testConnect() {
         let roaster = SwiftySR700()
         roaster.delegate = self

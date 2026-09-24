@@ -34,7 +34,7 @@ public enum HeatSetting: UInt8 {
     case none = 0, low, medium, high
 }
 
-public protocol RoasterDelegate: class {
+public protocol RoasterDelegate: AnyObject {
     func roasterChanged(temperature: Int, timeRemaining: Int)
     func stepCompleted(state: State)
     func connected(state: ConnectionState)
@@ -123,9 +123,9 @@ public class SwiftySR700 {
     
     public weak var delegate: RoasterDelegate?
 
-    fileprivate(set) var state = State.idle {
+    fileprivate var _state = State.idle {
         didSet {
-            switch state {
+            switch _state {
             case .idle:
                 currentState = [0x02, 0x01]
                 break
@@ -139,7 +139,7 @@ public class SwiftySR700 {
                 currentState = [0x08, 0x01]
                 break
             }
-            logger.info("Set state to \(state)")
+            logger.info("Set state to \(_state)")
         }
     }
     
@@ -175,50 +175,132 @@ public class SwiftySR700 {
     }
     
     public func roast(level: HeatSetting, fan: Int, seconds:Int, completion: (() -> Void)? = nil) {
-        state = .roast
-        heatSetting = level
-        softwareThermostat = false
-        fanSpeed = UInt8(fan)
-        timeRemaining = seconds
-        completionHandler = completion
+        withLock {
+            _state = .roast
+            heatSetting = level
+            softwareThermostat = false
+            fanSpeed = UInt8(fan)
+            timeRemaining = seconds
+            completionHandler = completion
+        }
         timer.resume()
     }
-    
+
     public func roast(temperature: Int, fan: Int, seconds:Int, completion: (() -> Void)? = nil) {
-        state = .roast
-        targetTemp = temperature
-        softwareThermostat = true
-        fanSpeed = UInt8(fan)
-        timeRemaining = seconds
-        completionHandler = completion
+        withLock {
+            _state = .roast
+            targetTemp = temperature
+            softwareThermostat = true
+            fanSpeed = UInt8(fan)
+            timeRemaining = seconds
+            completionHandler = completion
+        }
         timer.resume()
     }
-    
+
     public func cool(fan: Int, seconds:Int, completion: (() -> Void)? = nil) {
-        state = .cool
-        fanSpeed = UInt8(fan)
-        timeRemaining = seconds
-        completionHandler = completion
+        withLock {
+            _state = .cool
+            fanSpeed = UInt8(fan)
+            timeRemaining = seconds
+            completionHandler = completion
+        }
         timer.resume()
     }
-    
+
     public func idle() {
-        state = .idle
-        heatSetting = .none
-        fanSpeed = 0
-        completionHandler = nil
+        withLock {
+            _state = .idle
+            heatSetting = .none
+            fanSpeed = 0
+            completionHandler = nil
+        }
     }
-    
+
     public func sleep() {
-        state = .sleep
+        withLock {
+            _state = .sleep
+        }
     }
-    
+
     /// Closes the serial port but does not exit the communications thread, so we are
     /// able to reconnect again if we want to.
     public func disconnect() {
         doDisconnect = true // Signals serialCommunicationsQueueEntry()
         timer.suspend()
-        state = .sleep
+        withLock {
+            _state = .sleep
+        }
+    }
+
+    // MARK: - Live control
+
+    /* The following can be called at any time, including mid roast, without
+     resetting the step timer or completion handler. They are safe to call
+     from any thread. */
+
+    public var state: State { withLock { _state } }
+    public var connectionState: ConnectionState { withLock { connectState } }
+    /// Latest temperature reported by the roaster, in degrees F
+    public var currentTemperature: Int { withLock { currentTemp } }
+    /// Thermostat target temperature, in degrees F
+    public var targetTemperature: Int { withLock { targetTemp } }
+    public var fan: Int { withLock { Int(fanSpeed) } }
+    public var heat: HeatSetting { withLock { heatSetting } }
+    /// Heater level in segments (0...heaterSegments) when driven externally
+    public var heaterLevelSetting: Int { withLock { heaterLevel } }
+    public var isThermostatMode: Bool { withLock { softwareThermostat } }
+    public var isExternalHeaterDrive: Bool { withLock { extHeaterDrive } }
+
+    /// Sets the fan speed (1...9)
+    public func setFan(_ speed: Int) {
+        withLock {
+            fanSpeed = UInt8(min(max(speed, 1), 9))
+        }
+    }
+
+    /// Sets a fixed heat setting and turns off the software thermostat
+    public func setHeat(_ level: HeatSetting) {
+        withLock {
+            softwareThermostat = false
+            extHeaterDrive = false
+            heatSetting = level
+        }
+    }
+
+    /// Sets the thermostat target (degrees F) and turns on the software thermostat
+    public func setTargetTemperature(_ temperature: Int) {
+        withLock {
+            targetTemp = temperature
+            extHeaterDrive = false
+            softwareThermostat = true
+        }
+    }
+
+    /// Drives the heater directly at level segments out of heaterSegments,
+    /// bypassing the internal PID, e.g. so an external controller can drive it.
+    public func setHeaterLevel(_ level: Int) {
+        withLock {
+            heaterLevel = min(max(level, 0), heaterSegments)
+            extHeaterDrive = true
+            softwareThermostat = true
+        }
+    }
+
+    /// Sets the time remaining in the current roast or cool step
+    public func setTimeRemaining(_ seconds: Int) {
+        withLock {
+            timeRemaining = max(seconds, 0)
+        }
+    }
+
+    fileprivate let lock = NSLock()
+
+    @discardableResult
+    fileprivate func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return try body()
     }
     
     /// Closes the serial port and exits the communications thread. If you want to
@@ -268,13 +350,15 @@ public class SwiftySR700 {
         
     fileprivate func setInitState() {
         connectState = .readingCurrentRecipe
-        header = [0xAA, 0x55]
-        currentState = [0x00, 0x00]
+        withLock {
+            header = [0xAA, 0x55]
+            currentState = [0x00, 0x00]
+        }
     }
     
     fileprivate func writeToDevice() -> Bool {
         var success = false
-        let packet = generatePacket()
+        let packet = withLock { generatePacket() }
         packet.withUnsafeBytes { bytes in
             let unsafeBytes = UnsafeMutablePointer<UInt8>.allocate(capacity: packet.count)
             unsafeBytes.initialize(from: packet, count: packet.count)
@@ -323,6 +407,7 @@ public class SwiftySR700 {
                 if tearDown {
                     break
                 }
+                Thread.sleep(forTimeInterval: 0.05)
             }
             if tearDown {
                 break
@@ -427,29 +512,30 @@ public class SwiftySR700 {
                     }
                 }
                 
-                // Update the PID controlled software thermostat, or external thermostat (not implemented)
-                if connectState == .ready && softwareThermostat {
-                    logger.trace("Updating thermostat")
-                    if state == .roast {
-                        // Update the PID controller once every time through
-                        // the heater segment count
-                        if heater.aboutToRollOver {
-                            if extHeaterDrive {
-                                heater.heatLevel = heaterLevel
+                // Update the PID controlled software thermostat, or external heater drive
+                withLock {
+                    if connectState == .ready && softwareThermostat {
+                        logger.trace("Updating thermostat")
+                        if _state == .roast {
+                            // Update the PID controller once every time through
+                            // the heater segment count
+                            if heater.aboutToRollOver {
+                                if extHeaterDrive {
+                                    heater.heatLevel = heaterLevel
+                                }
+                                else {
+                                    let controllerOutput = pidc.update(currentTemp: Double(currentTemp), targetTemp: Double(targetTemp))
+                                    logger.info("heater.aboutToRollOver, currentTemp = \(currentTemp), targetTemp = \(targetTemp), controllerOutput (heatLevel) = \(controllerOutput)")
+                                    heater.heatLevel = Int(controllerOutput)
+                                }
                             }
-                            else {
-                                let controllerOutput = pidc.update(currentTemp: Double(currentTemp), targetTemp: Double(targetTemp))
-                                logger.info("heater.aboutToRollOver, currentTemp = \(currentTemp), targetTemp = \(targetTemp), controllerOutput (heatLevel) = \(controllerOutput)")
-                                heater.heatLevel = Int(controllerOutput)
-                            }
+                            // Toggle roaster heat level (Off/L/M/H) between High and off
+                            heatSetting = heater.generateBangBang() ? .high : .none
                         }
-                        // Toggle roaster heat level (Off/L/M/H) between High and off
-                        heatSetting = heater.generateBangBang() ? .high : .none
-                    }
-                    else {
-                        heater.heatLevel = 0
-                        heaterLevel = 0
-                        heatSetting = .none
+                        else {
+                            heater.heatLevel = 0
+                            heatSetting = .none
+                        }
                     }
                 }
                 
@@ -474,19 +560,25 @@ public class SwiftySR700 {
     // cooling. If the time remaining reaches zero, the roaster will be set to
     // the idle state.
     fileprivate func timerFired() {
-        if state == .roast || state == .cool {
+        // Callbacks are made outside the lock so they can call back into the roaster
+        let completed: (state: State, handler: (() -> Void)?)? = withLock {
+            guard _state == .roast || _state == .cool else {
+                return nil
+            }
             totalTime += 1
             if timeRemaining > 0 {
                 timeRemaining -= 1
                 logger.trace("*** Time remaining = \(timeRemaining), totalTime = \(totalTime) ***")
+                return nil
             }
-            else {
-                // Time remaining has expired
-                logger.trace("*** Time remaining expired, totalTime = \(totalTime) ***")
-                timer.suspend()
-                completionHandler?()
-                delegate?.stepCompleted(state: state)
-            }
+            // Time remaining has expired
+            logger.trace("*** Time remaining expired, totalTime = \(totalTime) ***")
+            return (_state, completionHandler)
+        }
+        if let completed = completed {
+            timer.suspend()
+            completed.handler?()
+            delegate?.stepCompleted(state: completed.state)
         }
     }
     
@@ -538,10 +630,12 @@ public class SwiftySR700 {
     
     fileprivate func handleInitCompletion() {
         connectState = .ready
-        // Reset to normal header
-        header = [0xAA, 0xAA]
-        // Reset to idle state
-        currentState = [0x02, 0x01]
+        withLock {
+            // Reset to normal header
+            header = [0xAA, 0xAA]
+            // Reset to idle state
+            currentState = [0x02, 0x01]
+        }
         
         // Call our connect completion handler and delegate if we have them
         connectCompletionHandler?(.ready)
@@ -568,19 +662,17 @@ public class SwiftySR700 {
         
         logger.trace("Processing roaster bytes, temp = \(temp)")
         
-        if temp == 0xFF00 {
-            currentTemp = 150
-        }
-        else if temp > 550 || temp < 150 {
+        if (temp > 550 && temp != 0xFF00) || temp < 150 {
             setInitState()
             return false
         }
-        else {
-            currentTemp = Int(temp)
+        let (temperature, remaining): (Int, Int) = withLock {
+            currentTemp = temp == 0xFF00 ? 150 : Int(temp)
+            return (currentTemp, timeRemaining)
         }
         
         // Let our delegate know something changed
-        delegate?.roasterChanged(temperature: currentTemp, timeRemaining: timeRemaining)
+        delegate?.roasterChanged(temperature: temperature, timeRemaining: remaining)
         
         return true
     }
