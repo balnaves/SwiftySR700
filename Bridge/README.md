@@ -12,7 +12,7 @@ SR700 --USB--> SR700ArtisanBridge (ws://127.0.0.1:8080/WebSocket) <--- Artisan (
 
 ```
 cd Bridge
-swift run SR700ArtisanBridge --serial /dev/tty.usbserial-XXXX
+swift run SR700ArtisanBridge --serial /dev/cu.wchusbserial<number>
 ```
 
 | Option | Default | |

@@ -19,7 +19,17 @@ A Swift package to control a FreshRoast SR700 coffee roaster over its USB serial
 ## Requirements
 - The library needs Swift 5.1 or later on macOS or Linux (including Raspberry Pi).
 - The bridge needs Swift 6 and macOS 14 or Linux.
-- On macOS the roaster's CH340 USB serial chip needs WCH's CH34x driver. The roaster then appears as `/dev/cu.wchusbserial<port>`, where the number depends on the USB port. On Linux it is usually `/dev/ttyUSB0`, and your user needs to be in the `dialout` group.
+- On macOS the roaster's CH340 USB serial chip needs WCH's CH34x driver (see below). On Linux it shows up as `/dev/ttyUSB0` without extra drivers, and your user needs to be in the `dialout` group (`sudo usermod -aG dialout $USER`, then log out and back in).
+
+### Installing the CH340 USB serial driver on macOS
+1. Download **CH34XSER_MAC** from WCH, the chip's manufacturer: [wch-ic.com/downloads/CH34XSER_MAC_ZIP.html](https://www.wch-ic.com/downloads/CH34XSER_MAC_ZIP.html). The same driver and its install notes are also on GitHub at [WCHSoftGroup/ch34xser_macos](https://github.com/WCHSoftGroup/ch34xser_macos).
+2. Unzip it and open the DMG (macOS 11 and later). Drag **CH34xVCPDriver** to Applications, open it and click **Install**.
+3. Approve the driver extension when macOS asks. The setting is under System Settings › Privacy & Security, or System Settings › General › Login Items & Extensions › Driver Extensions on recent versions.
+4. Plug in the roaster and find its device:
+   ```
+   ls /dev/cu.wch*
+   ```
+   It appears as `/dev/cu.wchusbserial<number>`, e.g. `/dev/cu.wchusbserial20120`. The number depends on the USB port, so check again if you move the cable. Use the `cu.` device, not `tty.`.
 
 ### Installing Swift on a Raspberry Pi
 Swift.org publishes aarch64 Linux toolchains, which run on 64-bit Raspberry Pi OS. Follow the Linux instructions at [swift.org/install](https://www.swift.org/install/).
@@ -136,12 +146,27 @@ The bridge has its own tests, which use a simulated roaster: `cd Bridge && swift
 ## Using the SR700 with Artisan
 The `Bridge` folder contains `SR700ArtisanBridge`, which connects the roaster to [Artisan](https://artisan-scope.org) over Artisan's WebSocket device, together with a matching Artisan settings file (`FreshRoast-SR700.aset`).
 
+### Building the WebSocket server
+The bridge needs Swift 6 (Xcode 16 or later on macOS 14+, or the swift.org toolchain on Linux and Raspberry Pi). It depends on the library through a relative path, so build it from inside a clone of this repo:
 ```
+git clone https://github.com/balnaves/SwiftySR700.git
+cd SwiftySR700
+git checkout artisan-websocket-bridge
 cd Bridge
-swift run SR700ArtisanBridge --serial /dev/cu.wchusbserial20120
+swift build -c release
 ```
+The first build fetches Hummingbird and its dependencies and takes a few minutes. The executable ends up at `.build/release/SR700ArtisanBridge`, and you can run it from there or copy it somewhere on your `PATH`:
+```
+.build/release/SR700ArtisanBridge --serial /dev/cu.wchusbserial20120
+```
+Check that it builds and runs without a roaster attached:
+```
+.build/release/SR700ArtisanBridge --simulate --verbose
+swift test
+```
+For development, `swift run SR700ArtisanBridge --serial <device>` builds a debug version and runs it in one step. `--help` lists all the options.
 
-Add `--simulate` to try it without a roaster. See [Bridge/README.md](Bridge/README.md) for the options, Artisan setup, protocol and safety behaviour.
+Then load `Bridge/FreshRoast-SR700.aset` into Artisan (Help › Load Settings) and press ON. See [Bridge/README.md](Bridge/README.md) for the options, Artisan setup, protocol and safety behaviour.
 
 ## History/Origin
 Depending on how far it evolves, this project could be considered a port of, or at least heavily inspired by, the python library [FreshRoastSR700](https://github.com/Roastero/freshroastsr700).
